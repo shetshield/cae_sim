@@ -191,57 +191,74 @@ def run_simulation(mesh_file, t_mm):
     return mesh, u, basis
 
 # ---------------------------------------------------------
-# 4. Visualization (PyVista) - Probes 방식 (Fix)
+# 4. Visualization (PyVista) - Auto-scaling 적용
 # ---------------------------------------------------------
 def visualize(mesh, u, basis, t_mm):
     print("[Vis] Interpolating solution to mesh vertices...")
     
-    # [수정] basis.interpolate 대신 basis.probes 사용
-    # basis.probes(x)는 좌표 x에서 해를 계산하기 위한 관측 행렬(Observation Matrix)을 반환합니다.
-    # 이를 해 벡터 u와 곱하면 해당 좌표에서의 변위 값을 얻을 수 있습니다.
-    
-    # 1. 메쉬의 모든 꼭짓점(Vertex) 좌표 가져오기
-    # mesh.p는 (3, n_vertices) 형태
+    # 1. 해(Solution)를 메쉬 꼭짓점으로 보간
     M = basis.probes(mesh.p)
-    
-    # 2. 행렬 곱을 통해 꼭짓점에서의 변위 계산
-    # u_at_nodes는 1D array로 [x성분들..., y성분들..., z성분들...] 순서로 나열됨
     u_at_nodes = M @ u
     
-    # 3. 데이터 분리 (Component-wise splitting)
     n_vertices = mesh.p.shape[1]
-    
     u_x = u_at_nodes[0 * n_vertices : 1 * n_vertices]
     u_y = u_at_nodes[1 * n_vertices : 2 * n_vertices]
     u_z = u_at_nodes[2 * n_vertices : 3 * n_vertices]
     
     displacement = np.vstack((u_x, u_y, u_z)).T
     
-    # PyVista Grid 생성
+    # 2. PyVista Grid 생성
     cells = np.hstack([np.full((mesh.t.shape[1], 1), 4), mesh.t.T]).flatten()
     cell_type = np.full(mesh.t.shape[1], pv.CellType.TETRA, dtype=np.uint8)
-    
     grid = pv.UnstructuredGrid(cells, cell_type, mesh.p.T)
     
-    # 결과 매핑
+    # 데이터 매핑
     grid.point_data["Displacement"] = displacement
     grid.point_data["Magnitude"] = np.linalg.norm(displacement, axis=1)
     
-    # Warp (변형 형상 생성, 1.0배)
-    warped = grid.warp_by_vector("Displacement", factor=1.0) 
+    # ---------------------------------------------------------
+    # [수정] 자동 스케일링 (Auto-Scaling Factor) 계산
+    # ---------------------------------------------------------
+    # 목표: 최대 변형량이 빔 전체 길이의 15% 정도로 보이게 과장함
+    max_disp_real = np.max(grid.point_data['Magnitude'])
     
+    # 빔의 대략적인 크기 (Bounding Box 대각선 길이)
+    bounds = grid.bounds
+    model_size = np.sqrt((bounds[1]-bounds[0])**2 + (bounds[3]-bounds[2])**2 + (bounds[5]-bounds[4])**2)
+    
+    if max_disp_real > 1e-12: # 변형이 거의 없는 경우 제외
+        # (모델크기 * 0.15) / 실제변형량 = 확대배율
+        scale_factor = (model_size * 0.15) / max_disp_real
+    else:
+        scale_factor = 1.0
+
+    print(f"[Vis] Real Max Deflection: {max_disp_real*1000:.4f} mm")
+    print(f"[Vis] Applying Deformation Scale Factor: x{scale_factor:.2f}")
+
+    # Warp (과장된 배율 적용)
+    warped = grid.warp_by_vector("Displacement", factor=scale_factor) 
+    
+    # ---------------------------------------------------------
     # 렌더링
     plotter = pv.Plotter(off_screen=True)
+    
+    # 휘어진 메쉬 추가
     plotter.add_mesh(warped, scalars="Magnitude", cmap="jet", show_edges=False)
     
-    # 최대 변위 출력
-    max_disp = np.max(grid.point_data['Magnitude']) * 1000 # mm 단위 변환
-    plotter.add_text(f"Thickness: {5+t_mm:.2f} mm\nMax Deflection: {max_disp:.4f} mm", font_size=10)
+    # (선택사항) 비교를 위해 변형 전 원본 형상을 흐릿하게(Wireframe) 같이 표시
+    # plotter.add_mesh(grid, style='wireframe', color='white', opacity=0.3, label='Original')
+
+    max_disp_mm = max_disp_real * 1000
+    info_text = (f"Thickness: {5+t_mm:.2f} mm\n"
+                 f"Max Deflection: {max_disp_mm:.4f} mm\n"
+                 f"(Vis Scale: x{scale_factor:.1f})")
+    
+    plotter.add_text(info_text, font_size=10)
     plotter.view_isometric()
     
     img_filename = os.path.join(OUTPUT_DIR, f"result_t_{t_mm:.1f}.png")
     plotter.screenshot(img_filename)
-    print(f"[Vis] Saved {img_filename} (Max: {max_disp:.4f} mm)")
+    print(f"[Vis] Saved {img_filename}")
 
 # ---------------------------------------------------------
 # Main Loop
