@@ -27,10 +27,10 @@ for d in [MODEL_DIR, MESH_DIR, OUTPUT_DIR]:
 # ---------------------------------------------------------
 # 1. 설정 변수
 # ---------------------------------------------------------
-E_MODULUS = 193e9   
-NU_POISSON = 0.29   
-FORCE_TOTAL = -30.0 
-LOAD_RADIUS = 2.0   
+E_MODULUS = 193e9
+NU_POISSON = 0.29 
+FORCE_TOTAL = -50.0
+LOAD_RADIUS = 2.0
 
 # Onshape 설정
 USE_ONSHAPE = True 
@@ -107,7 +107,7 @@ def generate_mesh(t_mm):
             gmsh.model.occ.synchronize()
 
     current_thickness_mm = 5.0 + t_mm
-    target_mesh_size_mm = max(current_thickness_mm / 1.5, 1.0)
+    target_mesh_size_mm = max(current_thickness_mm / 1.5, 0.5)
     target_mesh_size_m = target_mesh_size_mm * 1e-3
     
     print(f"[Gmsh] Target Mesh Size: {target_mesh_size_mm:.3f} mm")
