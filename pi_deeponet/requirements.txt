@@ -1,0 +1,7 @@
+numpy
+torch
+tqdm
+gmsh
+scikit-fem
+pyvista
+onshape-client
